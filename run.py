@@ -94,8 +94,23 @@ class MomoLVLInferencer:
             )
             
             if response.status_code == 200:
-                result = response.json()
-                return result
+                raw_result = response.json()
+                
+                # vLLM 返回格式: {"id": "...", "object": "text_completion", "choices": [{"text": "..."}]}
+                # 转换为我们的统一格式
+                if 'choices' in raw_result and len(raw_result['choices']) > 0:
+                    text_output = raw_result['choices'][0].get('text', '')
+                    return {
+                        'success': True,
+                        'result': text_output,
+                        'raw_response': raw_result  # 保留原始响应
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': f"响应格式不正确，缺少 choices 字段",
+                        'raw_response': raw_result
+                    }
             else:
                 error_detail = ""
                 try:
