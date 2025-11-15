@@ -55,7 +55,7 @@ class MomoLVLInferencer:
         return image_base64
     
     def infer(self, text: str, image_path: str, max_tokens: int = 2048, 
-              temperature: float = 0.7, top_p: float = 0.9) -> Dict[str, Any]:
+              temperature: float = 0.7, top_p: float = 0.9, system_prompt: str = None) -> Dict[str, Any]:
         """
         调用模型进行推理
         
@@ -65,6 +65,7 @@ class MomoLVLInferencer:
             max_tokens: 最大生成长度（默认：2048）
             temperature: 温度参数，控制随机性（默认：0.7）
             top_p: nucleus sampling 参数（默认：0.9）
+            system_prompt: 可选的系统提示词
             
         Returns:
             {
@@ -77,21 +78,35 @@ class MomoLVLInferencer:
             print(f"加载图像: {image_path}")
             image_base64 = self.load_image_as_base64(image_path)
             
-            # 准备请求 - vLLM 多模态格式
-            # 根据测试结果，使用 vLLM 的多模态数据格式
+            # 准备请求 - vLLM Chat Completion 格式（多模态）
+            # 使用 messages 格式传递图像
             payload = {
-                'prompt': text,
-                'multi_modal_data': {
-                    'image': image_base64
-                },
+                'model': 'Qwen2.5-VL-72B-Instruct',  # 模型名称
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': [
+                            {
+                                'type': 'image_url',
+                                'image_url': {
+                                    'url': f'data:image/jpeg;base64,{image_base64}'
+                                }
+                            },
+                            {
+                                'type': 'text',
+                                'text': text
+                            }
+                        ]
+                    }
+                ],
                 # 生成参数
-                'max_tokens': max_tokens,    # 最大生成长度
-                'temperature': temperature,  # 温度参数，控制随机性
-                'top_p': top_p,              # nucleus sampling
-                'stop': None                 # 停止词（None 表示使用模型默认）
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+                'top_p': top_p
             }
             
             print(f"生成参数: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
+            print(f"使用 Chat Completion API 格式")
             
             print(f"发送请求到 {self.infer_endpoint}")
             print(f"输入文本: {text[:100]}..." if len(text) > 100 else f"输入文本: {text}")
@@ -110,15 +125,23 @@ class MomoLVLInferencer:
                 # 打印原始响应以便调试
                 print(f"\n🔍 原始响应: {json.dumps(raw_result, ensure_ascii=False, indent=2)[:500]}...")
                 
-                # vLLM 返回格式: {"id": "...", "object": "text_completion", "choices": [{"text": "..."}]}
-                # 转换为我们的统一格式
+                # 处理两种响应格式
                 if 'choices' in raw_result and len(raw_result['choices']) > 0:
-                    text_output = raw_result['choices'][0].get('text', '')
+                    choice = raw_result['choices'][0]
+                    
+                    # Chat Completion API 格式: {"message": {"content": "..."}}
+                    if 'message' in choice:
+                        text_output = choice['message'].get('content', '')
+                    # Completion API 格式: {"text": "..."}
+                    else:
+                        text_output = choice.get('text', '')
                     
                     # 检查是否为空
                     if not text_output or text_output.strip() == '':
                         print(f"⚠️  警告: 模型返回了空响应")
                         print(f"🔍 完整 choices: {raw_result['choices']}")
+                        if 'usage' in raw_result:
+                            print(f"🔍 Token 使用: {raw_result['usage']}")
                     
                     return {
                         'success': True,
