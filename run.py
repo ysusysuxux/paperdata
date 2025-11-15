@@ -14,17 +14,18 @@ import argparse
 class MomoLVLInferencer:
     """MomoL-VL 推理客户端"""
     
-    def __init__(self, server_url: str = "http://localhost:5000"):
+    def __init__(self, server_url: str = "http://localhost:8000", model_name: str = "momolVL"):
         """
         初始化推理客户端
         
         Args:
-            server_url: 模型服务器地址 (默认: http://localhost:5000)
-                       如果在远程Linux服务器，改为 http://<your_server_ip>:5000
+            server_url: 模型服务器地址 (默认: http://localhost:8000)
+                       vLLM 默认监听在 8000 端口
+            model_name: 模型名称 (默认: momolVL)，应该与 vLLM 部署时的模型路径最后一部分匹配
         """
         self.server_url = server_url
-        # 尝试使用标准的 vLLM API 端点，如果不行再回退到 /invocations
-        self.infer_endpoint = f"{server_url}/v1/chat/completions"
+        self.infer_endpoint = f"{server_url}/invocations"  # 使用 /invocations 端点
+        self.model_name = model_name
         
     def load_image_as_base64(self, image_path: str) -> str:
         """
@@ -79,27 +80,11 @@ class MomoLVLInferencer:
             print(f"加载图像: {image_path}")
             image_base64 = self.load_image_as_base64(image_path)
             
-            # 准备请求 - vLLM Chat Completion 格式（多模态）
-            # 使用 messages 格式传递图像
+            # 准备请求 - 使用 test_api.py 中测试成功的格式 3b
+            # 格式: {prompt, image_data}
             payload = {
-                'model': 'momolVL',  # 模型名称（与 vLLM serve 路径的最后部分一致）
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': [
-                            {
-                                'type': 'image_url',
-                                'image_url': {
-                                    'url': f'data:image/jpeg;base64,{image_base64}'
-                                }
-                            },
-                            {
-                                'type': 'text',
-                                'text': text
-                            }
-                        ]
-                    }
-                ],
+                'prompt': text,
+                'image_data': image_base64,
                 # 生成参数
                 'max_tokens': max_tokens,
                 'temperature': temperature,
@@ -107,7 +92,7 @@ class MomoLVLInferencer:
             }
             
             print(f"生成参数: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
-            print(f"使用 Chat Completion API 格式")
+            print(f"使用格式: {{prompt, image_data}}")
             
             print(f"发送请求到 {self.infer_endpoint}")
             print(f"输入文本: {text[:100]}..." if len(text) > 100 else f"输入文本: {text}")
@@ -126,23 +111,38 @@ class MomoLVLInferencer:
                 # 打印原始响应以便调试
                 print(f"\n🔍 原始响应: {json.dumps(raw_result, ensure_ascii=False, indent=2)[:500]}...")
                 
-                # 处理两种响应格式
-                if 'choices' in raw_result and len(raw_result['choices']) > 0:
+                # 处理多种可能的响应格式
+                text_output = None
+                
+                # 格式1: 直接返回文本 {"text": "..."}
+                if isinstance(raw_result, dict) and 'text' in raw_result:
+                    text_output = raw_result['text']
+                
+                # 格式2: 返回在 output 字段 {"output": "..."}
+                elif isinstance(raw_result, dict) and 'output' in raw_result:
+                    text_output = raw_result['output']
+                
+                # 格式3: 返回在 result 字段 {"result": "..."}
+                elif isinstance(raw_result, dict) and 'result' in raw_result:
+                    text_output = raw_result['result']
+                
+                # 格式4: OpenAI 格式 {"choices": [{"message": {"content": "..."}}]}
+                elif isinstance(raw_result, dict) and 'choices' in raw_result and len(raw_result['choices']) > 0:
                     choice = raw_result['choices'][0]
-                    
-                    # Chat Completion API 格式: {"message": {"content": "..."}}
                     if 'message' in choice:
                         text_output = choice['message'].get('content', '')
-                    # Completion API 格式: {"text": "..."}
-                    else:
+                    elif 'text' in choice:
                         text_output = choice.get('text', '')
-                    
+                
+                # 格式5: 直接是字符串
+                elif isinstance(raw_result, str):
+                    text_output = raw_result
+                
+                if text_output is not None:
                     # 检查是否为空
                     if not text_output or text_output.strip() == '':
                         print(f"⚠️  警告: 模型返回了空响应")
-                        print(f"🔍 完整 choices: {raw_result['choices']}")
-                        if 'usage' in raw_result:
-                            print(f"🔍 Token 使用: {raw_result['usage']}")
+                        print(f"🔍 完整响应: {raw_result}")
                     
                     return {
                         'success': True,
@@ -152,7 +152,7 @@ class MomoLVLInferencer:
                 else:
                     return {
                         'success': False,
-                        'error': f"响应格式不正确，缺少 choices 字段",
+                        'error': f"无法解析响应格式",
                         'raw_response': raw_result
                     }
             else:
@@ -205,14 +205,16 @@ def main():
     parser = argparse.ArgumentParser(description='MomoL-VL 模型推理脚本')
     parser.add_argument('--text', type=str, required=True, help='输入文本')
     parser.add_argument('--image', type=str, required=True, help='图像路径 (jpg/png)')
-    parser.add_argument('--server', type=str, default='http://localhost:5000', 
-                       help='模型服务器地址 (默认: http://localhost:5000)')
+    parser.add_argument('--server', type=str, default='http://localhost:8000', 
+                       help='模型服务器地址 (默认: http://localhost:8000)')
+    parser.add_argument('--model', type=str, default='momolVL',
+                       help='模型名称 (默认: momolVL)，应该与 vLLM 部署的模型名称匹配')
     parser.add_argument('--output', type=str, help='输出结果保存路径 (可选)')
     
     args = parser.parse_args()
     
     # 初始化推理客户端
-    inferencer = MomoLVLInferencer(server_url=args.server)
+    inferencer = MomoLVLInferencer(server_url=args.server, model_name=args.model)
     
     # 执行推理
     print("=" * 50)
