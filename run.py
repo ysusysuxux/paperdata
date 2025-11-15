@@ -107,10 +107,19 @@ class MomoLVLInferencer:
             if response.status_code == 200:
                 raw_result = response.json()
                 
+                # 打印原始响应以便调试
+                print(f"\n🔍 原始响应: {json.dumps(raw_result, ensure_ascii=False, indent=2)[:500]}...")
+                
                 # vLLM 返回格式: {"id": "...", "object": "text_completion", "choices": [{"text": "..."}]}
                 # 转换为我们的统一格式
                 if 'choices' in raw_result and len(raw_result['choices']) > 0:
                     text_output = raw_result['choices'][0].get('text', '')
+                    
+                    # 检查是否为空
+                    if not text_output or text_output.strip() == '':
+                        print(f"⚠️  警告: 模型返回了空响应")
+                        print(f"🔍 完整 choices: {raw_result['choices']}")
+                    
                     return {
                         'success': True,
                         'result': text_output,
