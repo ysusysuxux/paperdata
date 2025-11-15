@@ -73,11 +73,26 @@ class MomoLVLInferencer:
             print(f"加载图像: {image_path}")
             image_base64 = self.load_image_as_base64(image_path)
             
-            # 准备请求
+            # 准备请求 - 尝试多种格式
+            # 格式1: 标准格式
             payload = {
                 'text': text,
                 'image': image_base64
             }
+            
+            # 格式2: MLflow/SageMaker 格式（/invocations 常用）
+            # payload = {
+            #     'inputs': {
+            #         'text': text,
+            #         'image': image_base64
+            #     }
+            # }
+            
+            # 格式3: vLLM 格式
+            # payload = {
+            #     'prompt': text,
+            #     'image_data': image_base64
+            # }
             
             print(f"发送请求到 {self.infer_endpoint}")
             print(f"输入文本: {text[:100]}..." if len(text) > 100 else f"输入文本: {text}")
@@ -86,16 +101,22 @@ class MomoLVLInferencer:
             response = requests.post(
                 self.infer_endpoint,
                 json=payload,
-                timeout=300  # 300秒超时
+                timeout=300,  # 300秒超时
+                headers={'Content-Type': 'application/json'}
             )
             
             if response.status_code == 200:
                 result = response.json()
                 return result
             else:
+                error_detail = ""
+                try:
+                    error_detail = response.text
+                except:
+                    pass
                 return {
                     'success': False,
-                    'error': f"服务器返回错误: HTTP {response.status_code}"
+                    'error': f"服务器返回错误: HTTP {response.status_code}\n详细信息: {error_detail}"
                 }
                 
         except requests.exceptions.ConnectionError:
