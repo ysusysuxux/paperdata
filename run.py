@@ -137,8 +137,7 @@ def main():
     parser = argparse.ArgumentParser(description='MomoL-VL 模型推理脚本')
     parser.add_argument('--text', type=str, required=True, help='输入文本')
     parser.add_argument('--image', type=str, required=True, help='图像路径 (jpg/png)')
-    parser.add_argument('--server', type=str, default='
-    ', 
+    parser.add_argument('--server', type=str, default='http://localhost:5000', 
                        help='模型服务器地址 (默认: http://localhost:5000)')
     parser.add_argument('--output', type=str, help='输出结果保存路径 (可选)')
     
