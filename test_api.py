@@ -41,13 +41,23 @@ def test_api_formats():
     }
     test_endpoint(server_url + "/invocations", payload2)
     
-    # 测试格式3: prompt 和 image_data
-    print("\n[测试 3] 备选格式: {prompt, image_data}")
+    # 测试格式3: vLLM 多模态格式（推荐）
+    print("\n[测试 3] vLLM 多模态格式: {prompt, multi_modal_data: {image}}")
     payload3 = {
+        'prompt': test_text,
+        'multi_modal_data': {
+            'image': tiny_png_base64
+        }
+    }
+    test_endpoint(server_url + "/invocations", payload3)
+    
+    # 测试格式3b: 旧的 image_data 格式
+    print("\n[测试 3b] 备选格式: {prompt, image_data}")
+    payload3b = {
         'prompt': test_text,
         'image_data': tiny_png_base64
     }
-    test_endpoint(server_url + "/invocations", payload3)
+    test_endpoint(server_url + "/invocations", payload3b)
     
     # 测试格式4: 数据URL格式
     print("\n[测试 4] Data URL 格式")

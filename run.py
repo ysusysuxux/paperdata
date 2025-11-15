@@ -73,26 +73,14 @@ class MomoLVLInferencer:
             print(f"加载图像: {image_path}")
             image_base64 = self.load_image_as_base64(image_path)
             
-            # 准备请求 - 尝试多种格式
-            # 格式1: 标准格式
+            # 准备请求 - vLLM 多模态格式
+            # 根据测试结果，使用 vLLM 的多模态数据格式
             payload = {
-                'text': text,
-                'image': image_base64
+                'prompt': text,
+                'multi_modal_data': {
+                    'image': image_base64
+                }
             }
-            
-            # 格式2: MLflow/SageMaker 格式（/invocations 常用）
-            # payload = {
-            #     'inputs': {
-            #         'text': text,
-            #         'image': image_base64
-            #     }
-            # }
-            
-            # 格式3: vLLM 格式
-            # payload = {
-            #     'prompt': text,
-            #     'image_data': image_base64
-            # }
             
             print(f"发送请求到 {self.infer_endpoint}")
             print(f"输入文本: {text[:100]}..." if len(text) > 100 else f"输入文本: {text}")
