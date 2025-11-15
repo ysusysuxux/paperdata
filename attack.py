@@ -74,11 +74,22 @@ class AttackRunner:
             result: 包含 text, image_path, attackllm_output 的字典
         """
         try:
+            # 检查文件是否已存在
+            file_exists = os.path.exists(self.output_file)
+            
             # JSONL 格式（每行一个 JSON 对象）
             with open(self.output_file, 'a', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False)
                 f.write('\n')
-            print(f"✓ 结果已保存到: {self.output_file}")
+            
+            # 计算文件中的记录数
+            with open(self.output_file, 'r', encoding='utf-8') as f:
+                line_count = sum(1 for line in f if line.strip())
+            
+            if file_exists:
+                print(f"✓ 结果已追加到: {self.output_file} (当前共 {line_count} 条记录)")
+            else:
+                print(f"✓ 结果已保存到: {self.output_file} (新建文件)")
         except Exception as e:
             print(f"❌ 保存结果失败: {e}")
     
@@ -127,7 +138,8 @@ class AttackRunner:
             if result['success']:
                 output = result['result']
                 print(f"\n✓ 推理成功")
-                print(f"📤 输出: {output[:200]}..." if len(output) > 200 else f"📤 输出: {output}")
+                print(f"📤 输出长度: {len(output)} 字符")
+                print(f"📤 输出预览: {output[:300]}..." if len(output) > 300 else f"📤 输出: {output}")
                 
                 # 构建结果对象
                 record = {
@@ -135,6 +147,8 @@ class AttackRunner:
                     'image_path': str(image_path.absolute()),
                     'attackllm_output': output
                 }
+                
+                print(f"💾 准备保存完整输出 ({len(output)} 字符)")
                 
                 return record
             else:
