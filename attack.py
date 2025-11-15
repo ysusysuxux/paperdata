@@ -4,15 +4,18 @@ MomoL-VL 攻击脚本
 使用 vLLM 部署的模型进行推理，并将结果保存到 JSON 文件
 
 使用方式:
+    # 单个文本和图片
     python attack.py --text "你的问题" --image_path "/path/to/image.jpg"
-    python attack.py --text "分析这张图片" --image_path "./test.png" --output "./eomol.json"
+    
+    # 批量处理 JSONL 文件
+    python attack.py --type 01 --server http://localhost:8000
 """
 
 import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 from run import MomoLVLInferencer
 
 
@@ -187,45 +190,143 @@ class AttackRunner:
             print(f"❌ 攻击失败: {e}")
             print(f"{'='*60}")
             raise
+    
+    def run_batch(self, jsonl_file: str):
+        """
+        批量处理 JSONL 文件
+        
+        Args:
+            jsonl_file: JSONL 文件路径
+        """
+        # 验证文件存在
+        if not os.path.exists(jsonl_file):
+            raise FileNotFoundError(f"JSONL 文件不存在: {jsonl_file}")
+        
+        # 读取 JSONL 文件
+        records = []
+        with open(jsonl_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                if line.strip():
+                    try:
+                        record = json.loads(line)
+                        records.append(record)
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️  警告: 第 {line_num} 行 JSON 解析失败: {e}")
+        
+        total = len(records)
+        print(f"\n{'='*60}")
+        print(f"📊 批量处理开始")
+        print(f"{'='*60}")
+        print(f"📁 输入文件: {jsonl_file}")
+        print(f"📝 总记录数: {total}")
+        print(f"💾 输出文件: {self.output_file}")
+        print(f"{'='*60}\n")
+        
+        success_count = 0
+        fail_count = 0
+        
+        for idx, record in enumerate(records, 1):
+            # 提取 new_prompt 和 img_path
+            text = record.get('new_prompt', '')
+            image_path = record.get('img_path', '')
+            question_id = record.get('question_id', f'{idx-1}')
+            
+            if not text:
+                print(f"⚠️  记录 {idx} 缺少 new_prompt 字段，跳过")
+                fail_count += 1
+                continue
+            
+            if not image_path:
+                print(f"⚠️  记录 {idx} 缺少 img_path 字段，跳过")
+                fail_count += 1
+                continue
+            
+            print(f"\n{'='*60}")
+            print(f"处理记录 {idx}/{total} (question_id: {question_id})")
+            print(f"{'='*60}")
+            
+            try:
+                # 执行攻击
+                result_record = self.attack(text, image_path)
+                
+                # 添加原始记录的其他字段
+                result_record.update({
+                    'question_id': question_id,
+                    'scenario': record.get('scenario', ''),
+                    'original_question': record.get('original_question', ''),
+                })
+                
+                # 保存结果
+                self.save_result(result_record)
+                success_count += 1
+                
+                print(f"✅ 记录 {idx} 处理成功")
+                
+            except Exception as e:
+                print(f"❌ 记录 {idx} 处理失败: {e}")
+                fail_count += 1
+                
+                # 保存失败记录
+                error_record = {
+                    'question_id': question_id,
+                    'text': text,
+                    'image_path': image_path,
+                    'error': str(e),
+                    'success': False
+                }
+                self.save_result(error_record)
+        
+        # 打印总结
+        print(f"\n{'='*60}")
+        print(f"📊 批量处理完成")
+        print(f"{'='*60}")
+        print(f"✅ 成功: {success_count}/{total}")
+        print(f"❌ 失败: {fail_count}/{total}")
+        print(f"📁 结果已保存到: {self.output_file}")
+        print(f"{'='*60}\n")
 
 
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
-        description='MomoL-VL 攻击脚本',
+        description='MomoL-VL 攻击脚本 - 支持单个推理和批量处理',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
-  # 基础用法
+  # 批量处理 JSONL 文件（推荐）
+  python attack.py --type 01 --server http://localhost:8000
+  python attack.py --type 03 --server http://localhost:8000 --max_tokens 4096
+  
+  # 单个文本和图片推理
   python attack.py --text "这是什么?" --image_path "image.jpg"
-  
-  # 指定服务器
-  python attack.py --text "分析图片" --image_path "test.png" --server "http://192.168.1.100:5000"
-  
-  # 指定输出文件
-  python attack.py --text "问题" --image_path "img.jpg" --output "./results.json"
+  python attack.py --text "分析图片" --image_path "test.png" --server "http://192.168.1.100:8000"
         """
+    )
+    
+    # 添加 --type 参数用于批量处理
+    parser.add_argument(
+        '--type',
+        type=str,
+        choices=['01', '02', '03', '04', '05', '06', '07'],
+        help='批量处理类型 (01-07)，对应不同的 JSONL 文件'
     )
     
     parser.add_argument(
         '--text',
         type=str,
-        required=True,
-        help='输入文本'
+        help='输入文本（单个推理模式）'
     )
     
     parser.add_argument(
         '--image_path',
         type=str,
-        required=True,
-        help='图像路径 (jpg/png/gif/webp)'
+        help='图像路径 (jpg/png/gif/webp)（单个推理模式）'
     )
     
     parser.add_argument(
         '--output',
         type=str,
-        default='./eomol.json',
-        help='输出 JSON 文件路径 (默认: ./eomol.json)'
+        help='输出 JSON 文件路径（可选，批量模式自动生成）'
     )
     
     parser.add_argument(
@@ -265,21 +366,78 @@ def main():
     
     args = parser.parse_args()
     
-    # 创建运行器
-    runner = AttackRunner(
-        output_file=args.output,
-        server_url=args.server,
-        max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        model_name=args.model
-    )
+    # 类型映射表
+    type_mapping = {
+        '01': '01-Illegal_Activitiy.jsonl',
+        '02': '02-HateSpeech.jsonl.jsonl',
+        '03': '03-Malware_Generation.jsonl',
+        '04': '04-Physical_Harme.jsonl',
+        '05': '05-EconomicHarm.jsonl',
+        '06': '06-Fraud.jsonl',
+        '07': '07-Sex.jsonl'
+    }
     
-    # 执行攻击
-    runner.run(
-        text=args.text,
-        image_path=args.image_path
-    )
+    # 判断是批量模式还是单个模式
+    if args.type:
+        # 批量处理模式
+        jsonl_file = type_mapping[args.type]
+        
+        # 检查文件是否存在
+        if not os.path.exists(jsonl_file):
+            print(f"❌ 错误: JSONL 文件不存在: {jsonl_file}")
+            print(f"当前目录: {os.getcwd()}")
+            print(f"请确保在正确的目录下运行脚本")
+            return
+        
+        # 自动生成输出文件名
+        if args.output:
+            output_file = args.output
+        else:
+            # 从 JSONL 文件名提取基础名称
+            base_name = jsonl_file.replace('.jsonl', '').replace('.jsonl', '')  # 处理双扩展名
+            output_file = f"./{base_name}-results.json"
+        
+        print(f"\n🎯 批量处理模式")
+        print(f"📁 输入文件: {jsonl_file}")
+        print(f"💾 输出文件: {output_file}")
+        
+        # 创建运行器
+        runner = AttackRunner(
+            output_file=output_file,
+            server_url=args.server,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            model_name=args.model
+        )
+        
+        # 执行批量处理
+        runner.run_batch(jsonl_file)
+        
+    else:
+        # 单个推理模式
+        if not args.text or not args.image_path:
+            parser.error("单个推理模式需要 --text 和 --image_path 参数，或者使用 --type 进行批量处理")
+        
+        output_file = args.output if args.output else './eomol.json'
+        
+        print(f"\n🎯 单个推理模式")
+        
+        # 创建运行器
+        runner = AttackRunner(
+            output_file=output_file,
+            server_url=args.server,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            model_name=args.model
+        )
+        
+        # 执行单个攻击
+        runner.run(
+            text=args.text,
+            image_path=args.image_path
+        )
 
 
 if __name__ == '__main__':
