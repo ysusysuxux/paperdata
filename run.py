@@ -23,7 +23,8 @@ class MomoLVLInferencer:
                        如果在远程Linux服务器，改为 http://<your_server_ip>:5000
         """
         self.server_url = server_url
-        self.infer_endpoint = f"{server_url}/invocations"
+        # 尝试使用标准的 vLLM API 端点，如果不行再回退到 /invocations
+        self.infer_endpoint = f"{server_url}/v1/chat/completions"
         
     def load_image_as_base64(self, image_path: str) -> str:
         """
