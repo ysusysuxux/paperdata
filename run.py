@@ -82,7 +82,7 @@ class MomoLVLInferencer:
             # 准备请求 - vLLM Chat Completion 格式（多模态）
             # 使用 messages 格式传递图像
             payload = {
-                'model': 'Momol-72B',  # 模型名称
+                'model': 'momolVL',  # 模型名称（与 vLLM serve 路径的最后部分一致）
                 'messages': [
                     {
                         'role': 'user',
