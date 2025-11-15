@@ -19,20 +19,28 @@ from run import MomoLVLInferencer
 class AttackRunner:
     """MomoL-VL 攻击运行器"""
     
-    def __init__(self, output_file: str = "./eomol.json", server_url: str = "http://localhost:5000"):
+    def __init__(self, output_file: str = "./eomol.json", server_url: str = "http://localhost:5000",
+                 max_tokens: int = 2048, temperature: float = 0.7, top_p: float = 0.9):
         """
         初始化攻击运行器
         
         Args:
             output_file: 输出 JSON 文件路径
             server_url: vLLM 服务器地址
+            max_tokens: 最大生成长度
+            temperature: 温度参数
+            top_p: Top-p 采样参数
         """
         self.output_file = output_file
         self.server_url = server_url
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
         self.inferencer = MomoLVLInferencer(server_url=server_url)
         
         print(f"📝 输出文件: {self.output_file}")
         print(f"🖥️  服务器: {self.server_url}")
+        print(f"⚙️  生成参数: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
     
     def load_results(self) -> list:
         """
@@ -110,7 +118,10 @@ class AttackRunner:
         try:
             result = self.inferencer.infer(
                 text=text,
-                image_path=str(image_path)
+                image_path=str(image_path),
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                top_p=self.top_p
             )
             
             if result['success']:
@@ -207,12 +218,36 @@ def main():
         help='vLLM 服务器地址 (默认: http://localhost:5000)'
     )
     
+    parser.add_argument(
+        '--max_tokens',
+        type=int,
+        default=2048,
+        help='最大生成长度 (默认: 2048)'
+    )
+    
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.7,
+        help='温度参数 (默认: 0.7)'
+    )
+    
+    parser.add_argument(
+        '--top_p',
+        type=float,
+        default=0.9,
+        help='Top-p 采样参数 (默认: 0.9)'
+    )
+    
     args = parser.parse_args()
     
     # 创建运行器
     runner = AttackRunner(
         output_file=args.output,
-        server_url=args.server
+        server_url=args.server,
+        max_tokens=args.max_tokens,
+        temperature=args.temperature,
+        top_p=args.top_p
     )
     
     # 执行攻击

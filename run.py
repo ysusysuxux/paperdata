@@ -54,13 +54,17 @@ class MomoLVLInferencer:
         
         return image_base64
     
-    def infer(self, text: str, image_path: str) -> Dict[str, Any]:
+    def infer(self, text: str, image_path: str, max_tokens: int = 2048, 
+              temperature: float = 0.7, top_p: float = 0.9) -> Dict[str, Any]:
         """
         调用模型进行推理
         
         Args:
             text: 输入文本
             image_path: 图像路径 (png/jpg/jpeg)
+            max_tokens: 最大生成长度（默认：2048）
+            temperature: 温度参数，控制随机性（默认：0.7）
+            top_p: nucleus sampling 参数（默认：0.9）
             
         Returns:
             {
@@ -79,8 +83,15 @@ class MomoLVLInferencer:
                 'prompt': text,
                 'multi_modal_data': {
                     'image': image_base64
-                }
+                },
+                # 生成参数
+                'max_tokens': max_tokens,    # 最大生成长度
+                'temperature': temperature,  # 温度参数，控制随机性
+                'top_p': top_p,              # nucleus sampling
+                'stop': None                 # 停止词（None 表示使用模型默认）
             }
+            
+            print(f"生成参数: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
             
             print(f"发送请求到 {self.infer_endpoint}")
             print(f"输入文本: {text[:100]}..." if len(text) > 100 else f"输入文本: {text}")
