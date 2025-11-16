@@ -12,20 +12,24 @@ import argparse
 
 
 class MomoLVLInferencer:
-    """MomoL-VL 推理客户端"""
+    """多模态 VL 推理客户端 - 支持 momol 和 internvl"""
     
-    def __init__(self, server_url: str = "http://localhost:8000", model_name: str = "momolVL"):
+    def __init__(self, server_url: str = "http://localhost:8000", model_type: str = "momol"):
         """
         初始化推理客户端
         
         Args:
             server_url: 模型服务器地址 (默认: http://localhost:8000)
                        vLLM 默认监听在 8000 端口
-            model_name: 模型名称 (默认: momolVL)，应该与 vLLM 部署时的模型路径最后一部分匹配
+            model_type: 模型类型 (momol 或 internvl)
         """
         self.server_url = server_url
         self.infer_endpoint = f"{server_url}/invocations"  # 使用 /invocations 端点
-        self.model_name = model_name
+        self.model_type = model_type.lower()
+        
+        # 验证模型类型
+        if self.model_type not in ['momol', 'internvl']:
+            raise ValueError(f"不支持的模型类型: {model_type}，仅支持 'momol' 或 'internvl'")
         
     def load_image_as_base64(self, image_path: str) -> str:
         """
@@ -80,20 +84,40 @@ class MomoLVLInferencer:
             print(f"加载图像: {image_path}")
             image_base64 = self.load_image_as_base64(image_path)
             
-            # 准备请求 - 使用 test_api.py 中测试成功的格式 3b
-            # 格式: {prompt, image_data}
-            payload = {
-                'prompt': text,
-                'image_data': image_base64,
-                # 生成参数
-                'max_tokens': max_tokens,
-                'temperature': temperature,
-                'top_p': top_p
-            }
+            # 根据模型类型选择不同的请求格式
+            if self.model_type == 'momol':
+                # MomoL 格式: {prompt, image_data}
+                payload = {
+                    'prompt': text,
+                    'image_data': image_base64,
+                    # 生成参数
+                    'max_tokens': max_tokens,
+                    'temperature': temperature,
+                    'top_p': top_p
+                }
+                print(f"使用 MomoL 格式: {{prompt, image_data}}")
+                
+            elif self.model_type == 'internvl':
+                # InternVL 格式: OpenAI 风格 messages (测试9成功的格式)
+                payload = {
+                    'messages': [
+                        {
+                            'role': 'user',
+                            'content': [
+                                {'type': 'text', 'text': text},
+                                {'type': 'image_url', 'image_url': {'url': f'data:image/jpeg;base64,{image_base64}'}}
+                            ]
+                        }
+                    ],
+                    # 生成参数
+                    'max_tokens': max_tokens,
+                    'temperature': temperature,
+                    'top_p': top_p
+                }
+                print(f"使用 InternVL 格式: OpenAI 风格 messages")
             
+            print(f"模型类型: {self.model_type}")
             print(f"生成参数: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
-            print(f"使用格式: {{prompt, image_data}}")
-            
             print(f"发送请求到 {self.infer_endpoint}")
             print(f"输入文本: {text[:100]}..." if len(text) > 100 else f"输入文本: {text}")
             
@@ -114,27 +138,27 @@ class MomoLVLInferencer:
                 # 处理多种可能的响应格式
                 text_output = None
                 
-                # 格式1: 直接返回文本 {"text": "..."}
-                if isinstance(raw_result, dict) and 'text' in raw_result:
+                # OpenAI Chat Completion 格式（InternVL）: {"choices": [{"message": {"content": "..."}}]}
+                if isinstance(raw_result, dict) and 'choices' in raw_result and len(raw_result['choices']) > 0:
+                    choice = raw_result['choices'][0]
+                    if 'message' in choice and 'content' in choice['message']:
+                        text_output = choice['message']['content']
+                    elif 'text' in choice:
+                        text_output = choice['text']
+                
+                # 直接返回文本 {"text": "..."}
+                elif isinstance(raw_result, dict) and 'text' in raw_result:
                     text_output = raw_result['text']
                 
-                # 格式2: 返回在 output 字段 {"output": "..."}
+                # 返回在 output 字段 {"output": "..."}
                 elif isinstance(raw_result, dict) and 'output' in raw_result:
                     text_output = raw_result['output']
                 
-                # 格式3: 返回在 result 字段 {"result": "..."}
+                # 返回在 result 字段 {"result": "..."}
                 elif isinstance(raw_result, dict) and 'result' in raw_result:
                     text_output = raw_result['result']
                 
-                # 格式4: OpenAI 格式 {"choices": [{"message": {"content": "..."}}]}
-                elif isinstance(raw_result, dict) and 'choices' in raw_result and len(raw_result['choices']) > 0:
-                    choice = raw_result['choices'][0]
-                    if 'message' in choice:
-                        text_output = choice['message'].get('content', '')
-                    elif 'text' in choice:
-                        text_output = choice.get('text', '')
-                
-                # 格式5: 直接是字符串
+                # 直接是字符串
                 elif isinstance(raw_result, str):
                     text_output = raw_result
                 
@@ -207,14 +231,15 @@ def main():
     parser.add_argument('--image', type=str, required=True, help='图像路径 (jpg/png)')
     parser.add_argument('--server', type=str, default='http://localhost:8000', 
                        help='模型服务器地址 (默认: http://localhost:8000)')
-    parser.add_argument('--model', type=str, default='momolVL',
-                       help='模型名称 (默认: momolVL)，应该与 vLLM 部署的模型名称匹配')
+    parser.add_argument('--model', type=str, default='momol',
+                       choices=['momol', 'internvl'],
+                       help='模型类型 (默认: momol)，支持 momol 或 internvl')
     parser.add_argument('--output', type=str, help='输出结果保存路径 (可选)')
     
     args = parser.parse_args()
     
     # 初始化推理客户端
-    inferencer = MomoLVLInferencer(server_url=args.server, model_name=args.model)
+    inferencer = MomoLVLInferencer(server_url=args.server, model_type=args.model)
     
     # 执行推理
     print("=" * 50)

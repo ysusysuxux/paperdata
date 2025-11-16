@@ -23,7 +23,7 @@ class AttackRunner:
     """MomoL-VL 攻击运行器"""
     
     def __init__(self, output_file: str = "./eomol.json", server_url: str = "http://localhost:8000",
-                 max_tokens: int = 2048, temperature: float = 0.7, top_p: float = 0.9, model_name: str = "momolVL"):
+                 max_tokens: int = 2048, temperature: float = 0.7, top_p: float = 0.9, model_type: str = "momol"):
         """
         初始化攻击运行器
         
@@ -33,19 +33,19 @@ class AttackRunner:
             max_tokens: 最大生成长度
             temperature: 温度参数
             top_p: Top-p 采样参数
-            model_name: 模型名称（默认: momolVL）
+            model_type: 模型类型（momol 或 internvl）
         """
         self.output_file = output_file
         self.server_url = server_url
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
-        self.model_name = model_name
-        self.inferencer = MomoLVLInferencer(server_url=server_url, model_name=model_name)
+        self.model_type = model_type.lower()
+        self.inferencer = MomoLVLInferencer(server_url=server_url, model_type=model_type)
         
         print(f"📝 输出文件: {self.output_file}")
         print(f"🖥️  服务器: {self.server_url}")
-        print(f"🎯 模型名称: {self.model_name}")
+        print(f"🎯 模型类型: {self.model_type}")
         print(f"⚙️  生成参数: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
     
     def load_results(self) -> list:
@@ -360,8 +360,9 @@ def main():
     parser.add_argument(
         '--model',
         type=str,
-        default='momolVL',
-        help='模型名称 (默认: momolVL)，应该与 vLLM 部署的模型名称匹配'
+        default='momol',
+        choices=['momol', 'internvl'],
+        help='模型类型 (默认: momol)，支持 momol 或 internvl'
     )
     
     args = parser.parse_args()
@@ -389,13 +390,13 @@ def main():
             print(f"请确保在正确的目录下运行脚本")
             return
         
-        # 自动生成输出文件名
+        # 自动生成输出文件名（包含模型名称）
         if args.output:
             output_file = args.output
         else:
-            # 从 JSONL 文件名提取基础名称
+            # 从 JSONL 文件名提取基础名称，并添加模型名称
             base_name = jsonl_file.replace('.jsonl', '').replace('.jsonl', '')  # 处理双扩展名
-            output_file = f"./{base_name}-results.json"
+            output_file = f"./{base_name}-results-{args.model}.json"
         
         print(f"\n🎯 批量处理模式")
         print(f"📁 输入文件: {jsonl_file}")
@@ -408,7 +409,7 @@ def main():
             max_tokens=args.max_tokens,
             temperature=args.temperature,
             top_p=args.top_p,
-            model_name=args.model
+            model_type=args.model
         )
         
         # 执行批量处理
@@ -419,7 +420,7 @@ def main():
         if not args.text or not args.image_path:
             parser.error("单个推理模式需要 --text 和 --image_path 参数，或者使用 --type 进行批量处理")
         
-        output_file = args.output if args.output else './eomol.json'
+        output_file = args.output if args.output else f'./eomol-{args.model}.json'
         
         print(f"\n🎯 单个推理模式")
         
@@ -430,7 +431,7 @@ def main():
             max_tokens=args.max_tokens,
             temperature=args.temperature,
             top_p=args.top_p,
-            model_name=args.model
+            model_type=args.model
         )
         
         # 执行单个攻击
